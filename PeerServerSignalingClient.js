@@ -22,7 +22,6 @@ export class PeerServerSignalingClient extends EventTarget {
 
   get myId() {return this.#myId}
   get ready() {return this.#ready}
-  // get isConnected() {return this.#ws?.readyState == WebSocket.OPEN}
 
   /** Returns a promise which resolves when ready or rejects at error or timeout. */
   createReadyPromise(timeout = this.#maxConnectionAttempts * this.#retryDelay) {
@@ -65,22 +64,19 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#ws?.close()
   }
 
-  sendRaw(data) {
-    if (this.#ws?.readyState != WebSocket.OPEN) {
-      return
-    }
-    this.#ws.send(JSON.stringify(data))
-  }
-
   sendSignal({receiver, description: sdp, candidate, metadata} = {}) {
     if (!receiver) throw Error('Signal must have a receiver.')
     const type = (candidate ? 'CANDIDATE' : sdp?.type.toUpperCase())
     if (!type) throw Error('Signal must contain a description or candidate.')
-    this.sendRaw({
+    if (!this.ready || this.#ws?.readyState != WebSocket.OPEN) {
+      this.#channels.get(receiver)?.onExpire?.()
+      return
+    }
+    this.#ws.send(JSON.stringify({
       type, dst: receiver,
       payload: {sdp, candidate, metadata}
       // (JSON will NOT store undefined fields)
-    })
+    }))
     if (globalThis['DEBUG_SIGNALING']) {
       const detail = {sender: this.myId}
       if (sdp) detail.description = sdp
