@@ -1,0 +1,15 @@
+{
+  "name": "tiny-peerserver-client",
+  "version": "0.9.0",
+  "description": "Because I wanted it.",
+  "license": "MIT",
+  "type": "module",
+  "main": "PeerServerSignalingClient.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/joakimch/tiny-peerserver-client.git"
+  },
+  "files": [
+    "PeerServerSignalingClient.js"
+  ]
+}
