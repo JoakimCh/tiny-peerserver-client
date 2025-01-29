@@ -99,7 +99,11 @@ export class PeerServerSignalingClient extends EventTarget {
     })
     const endpointUrl = this.#endpoint+'?'+getParameters.toString()
     this.#connectionAttempt ++
-    this.#ws = new WebSocket(endpointUrl)
+    try {
+      this.#ws = new WebSocket(endpointUrl)
+    } catch (error) {
+      this.#error(error)
+    }
     const wsListenerAbortController = new AbortController()
     const signal = wsListenerAbortController.signal
 
