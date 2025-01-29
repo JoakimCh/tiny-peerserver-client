@@ -3,6 +3,7 @@ const HEARTBEAT_INTERVAL = 5000 // every 5 seconds
 
 export class PeerServerSignalingClient extends EventTarget {
   #endpoint; #ws; #myId
+  #connectionToken
   #connectionAttempt = 0; #maxConnectionAttempts; #retryDelay; #retryTimer
   #ready
 
@@ -17,7 +18,12 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#maxConnectionAttempts = maxConnectionAttempts
     this.#retryDelay = retryDelay
     this.#myId = myId
+    this.#newConnectionToken()
     this.#connect()
+  }
+
+  #newConnectionToken() {
+    this.#connectionToken = Math.random().toString(36).slice(2)
   }
 
   get myId() {return this.#myId}
@@ -54,6 +60,7 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#connectionAttempt = 0
     if (newMyId && newMyId != this.#myId) { // ID change
       this.#myId = newMyId
+      this.#newConnectionToken()
       if (isOpenOrOpening) {
         this.close() // (ID change require reconnection)
       }
@@ -100,11 +107,13 @@ export class PeerServerSignalingClient extends EventTarget {
     const getParameters = new URLSearchParams({
       key: 'peerjs', // API key for the PeerServer
       id: this.#myId,
-      token: Math.random().toString(36).slice(2),
-      // token: crypto.randomUUID() // used when connecting to the PeerServer, purpose unknown
+      token: this.#connectionToken
     })
     const endpointUrl = this.#endpoint+'?'+getParameters.toString()
     this.#connectionAttempt ++
+    this.dispatchEvent(new CustomEvent('connecting', {
+      detail: {message: ''+error, code: 'SIGNALING_SERVER_WS_CONNECTION_ERROR'}
+    }))
     try {
       this.#ws = new WebSocket(endpointUrl)
     } catch (error) {
@@ -131,9 +140,11 @@ export class PeerServerSignalingClient extends EventTarget {
 
     this.#ws.addEventListener('close', () => {
       wsListenerAbortController.abort()
-      this.#ready = false
       const willRetry = this.#connectionAttempt < this.#maxConnectionAttempts
-      this.dispatchEvent(new CustomEvent('closed', {detail: {willRetry}}))
+      if (this.#ready) { // only dispatch "closed" if it first had been "ready"
+        this.#ready = false
+        this.dispatchEvent(new CustomEvent('closed', {detail: {willRetry}}))
+      }
       if (willRetry) this.#queueRetry()
     }, {signal})
 
@@ -142,7 +153,7 @@ export class PeerServerSignalingClient extends EventTarget {
       try {
         data = JSON.parse(data)
       } catch (error) {
-        this.#error({
+        this.#fatalError({
           message: 'Invalid signaling server protocol: '+data,
           code: 'SIGNALING_SERVER_INVALID_PROTOCOL'
         })
@@ -153,7 +164,7 @@ export class PeerServerSignalingClient extends EventTarget {
     }, {signal})
   }
 
-  #error({message, code}) {
+  #fatalError({message, code}) {
     this.#ready = false
     this.close()
     this.dispatchEvent(new CustomEvent('error', {
@@ -173,19 +184,19 @@ export class PeerServerSignalingClient extends EventTarget {
     }
     switch (msg.type) {
       default:
-        this.#error({
+        this.#fatalError({
           message: 'Unknown signaling server command.',
           code: 'SIGNALING_SERVER_UNKNOWN_CMD'
         })
       break
       case 'ERROR':
-        this.#error({
+        this.#fatalError({
           message: 'Signaling server error: '+msg.payload?.msg,
           code: 'SIGNALING_SERVER_ERROR'
         })
       break
       case 'ID-TAKEN':
-        this.#error({
+        this.#fatalError({
           message: 'Peer with this ID is already connected.', 
           code: 'SIGNALING_SERVER_PEERID_TAKEN'
         })
