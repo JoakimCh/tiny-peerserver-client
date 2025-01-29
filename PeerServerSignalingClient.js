@@ -3,7 +3,7 @@ const HEARTBEAT_INTERVAL = 5000 // every 5 seconds
 
 export class PeerServerSignalingClient extends EventTarget {
   #endpoint; #ws; #myId
-  #connectionAttempt = 0; #maxConnectionAttempts; #retryDelay
+  #connectionAttempt = 0; #maxConnectionAttempts; #retryDelay; #retryTimer
   #ready
 
   constructor({
@@ -50,11 +50,17 @@ export class PeerServerSignalingClient extends EventTarget {
   }
 
   reconnect(newMyId = undefined) {
-    if ([WebSocket.CONNECTING, WebSocket.OPEN].includes(this.#ws?.readyState)) {
-      this.close()
-    }
-    if (newMyId) this.#myId = newMyId
+    const isOpenOrOpening = [WebSocket.CONNECTING, WebSocket.OPEN].includes(this.#ws?.readyState)
     this.#connectionAttempt = 0
+    if (newMyId && newMyId != this.#myId) { // ID change
+      this.#myId = newMyId
+      if (isOpenOrOpening) {
+        this.close() // (ID change require reconnection)
+      }
+    } else if (isOpenOrOpening) { // nothing to do then
+      return
+    }
+    clearTimeout(this.#retryTimer) // abort any queued retry
     this.#connect()
   }
 
@@ -69,8 +75,7 @@ export class PeerServerSignalingClient extends EventTarget {
     const type = (candidate ? 'CANDIDATE' : sdp?.type.toUpperCase())
     if (!type) throw Error('Signal must contain a description or candidate.')
     if (!this.ready || this.#ws?.readyState != WebSocket.OPEN) {
-      this.#onExpire(receiver)
-      return
+      throw Error(`Can't send a signal when "ready" is false.`)
     }
     this.#ws.send(JSON.stringify({
       type, dst: receiver,
@@ -86,10 +91,11 @@ export class PeerServerSignalingClient extends EventTarget {
     }
   }
 
+  #queueRetry() {
+    this.#retryTimer = setTimeout(this.#connect.bind(this), this.#retryDelay)
+  }
+
   #connect() {
-    if ([WebSocket.CONNECTING, WebSocket.OPEN].includes(this.#ws?.readyState)) {
-      return
-    }
     this.#ready = false
     const getParameters = new URLSearchParams({
       key: 'peerjs', // API key for the PeerServer
@@ -126,12 +132,10 @@ export class PeerServerSignalingClient extends EventTarget {
 
     this.#ws.addEventListener('close', () => {
       wsListenerAbortController.abort()
-      const willRetry = this.#connectionAttempt < this.#maxConnectionAttempts
       this.#ready = false
+      const willRetry = this.#connectionAttempt < this.#maxConnectionAttempts
       this.dispatchEvent(new CustomEvent('closed', {detail: {willRetry}}))
-      if (willRetry) {
-        setTimeout(this.#connect.bind(this), this.#retryDelay)
-      }
+      if (willRetry) this.#queueRetry()
     }, {signal})
 
     this.#ws.addEventListener('message', ({data}) => {
@@ -193,7 +197,8 @@ export class PeerServerSignalingClient extends EventTarget {
       break
       case 'LEAVE':  // peerId has left
       case 'EXPIRE': // a signal to peerId could not be delivered
-        this.#onExpire(msg.src)
+        this.dispatchEvent(new CustomEvent('expire', {detail: {peerId: msg.src}}))
+        this.#channels.get(peerId)?.onExpire?.()
       break
       case 'OFFER': case 'ANSWER': case 'CANDIDATE': {
         const {type, src: sender, dst, payload: {
@@ -208,13 +213,7 @@ export class PeerServerSignalingClient extends EventTarget {
       } break
     }
   }
-
-  /* when a signal to peerId could not be delivered */
-  #onExpire(peerId) {
-    this.dispatchEvent(new CustomEvent('expire', {detail: {peerId}}))
-    this.#channels.get(peerId)?.onExpire?.()
-  }
-
+  
   #channels = new Map()
   getChannel(peerId) {
     let channel = this.#channels.get(peerId)
