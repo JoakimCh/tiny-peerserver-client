@@ -19,7 +19,7 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#retryDelay = retryDelay
     this.#myId = myId
     this.#newConnectionToken()
-    this.#connect()
+    setTimeout(this.#connect.bind(this), 0) // this allows events listeners to be setup before we dispatch the "connecting" event
   }
 
   #newConnectionToken() {
