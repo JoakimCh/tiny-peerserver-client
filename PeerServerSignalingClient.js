@@ -69,7 +69,7 @@ export class PeerServerSignalingClient extends EventTarget {
     const type = (candidate ? 'CANDIDATE' : sdp?.type.toUpperCase())
     if (!type) throw Error('Signal must contain a description or candidate.')
     if (!this.ready || this.#ws?.readyState != WebSocket.OPEN) {
-      this.#channels.get(receiver)?.onExpire?.()
+      this.#onExpire(receiver)
       return
     }
     this.#ws.send(JSON.stringify({
@@ -182,9 +182,7 @@ export class PeerServerSignalingClient extends EventTarget {
       break
       case 'LEAVE':  // peerId has left
       case 'EXPIRE': // a signal to peerId could not be delivered
-        this.dispatchEvent(new CustomEvent(msg.type.toLowerCase(), {
-          detail: {peerId: msg.src}}))
-        this.#channels.get(msg.src)?.onExpire?.()
+        this.#onExpire(msg.src)
       break
       case 'OFFER': case 'ANSWER': case 'CANDIDATE': {
         const {type, src: sender, dst, payload: {
@@ -198,6 +196,12 @@ export class PeerServerSignalingClient extends EventTarget {
         this.#channels.get(sender)?.onSignal?.({description, candidate})
       } break
     }
+  }
+
+  /* when a signal to peerId could not be delivered */
+  #onExpire(peerId) {
+    this.dispatchEvent(new CustomEvent('expire', {detail: {peerId}}))
+    this.#channels.get(peerId)?.onExpire?.()
   }
 
   #channels = new Map()
@@ -217,7 +221,9 @@ export class PeerServerSignalingClient extends EventTarget {
 // for RTCPerfectNegotiator compatibility it needs the onSignal, onExpire, myId, peerId and send({description, candidate}) interface
 class SignalingChannel {
   #receiver
+  /** @type {PeerServerSignalingClient} */
   #signalingServerClient
+  #queue = new Set() // (a Set avoids duplicate signals)
 
   /** The onSignal({description, candidate}) callback */
   onSignal
@@ -228,9 +234,19 @@ class SignalingChannel {
   constructor(signalingServerClient, receiver) {
     this.#receiver = receiver
     this.#signalingServerClient = signalingServerClient
+    signalingServerClient.addEventListener('ready', () => {
+      for (const signal of this.#queue) {
+        this.send(signal)
+      }
+      this.#queue.clear()
+    })
   }
 
   send(signal) {
+    if (!this.#signalingServerClient.ready) {
+      this.#queue.add(signal)
+      return
+    }
     if (signal instanceof RTCSessionDescription) {
       this.#signalingServerClient.sendSignal({receiver: this.#receiver, description: signal})
     } else if (signal instanceof RTCIceCandidate) {
