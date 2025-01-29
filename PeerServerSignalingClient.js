@@ -111,11 +111,10 @@ export class PeerServerSignalingClient extends EventTarget {
       this.dispatchEvent(new CustomEvent('error', {
         detail: {message: ''+error, code: 'SIGNALING_SERVER_WS_CONNECTION_ERROR'}
       }))
-      const willRetry = this.#connectionAttempt < this.#maxConnectionAttempts
-      if (willRetry) {
-        setTimeout(this.#connect.bind(this), this.#retryDelay)
+      if (this.#connectionAttempt < this.#maxConnectionAttempts) {
+        this.#queueRetry()
       }
-      return
+      return // abort rest of code
     }
     const wsListenerAbortController = new AbortController()
     const signal = wsListenerAbortController.signal
