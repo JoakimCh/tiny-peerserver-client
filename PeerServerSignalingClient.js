@@ -128,9 +128,11 @@ export class PeerServerSignalingClient extends EventTarget {
       return // abort rest of code
     }
     const wsListenerAbortController = new AbortController()
-    const signal = wsListenerAbortController.signal
+    const signal = wsListenerAbortController.signal // used to clear event listeners
+    let didOpen
 
     this.#ws.addEventListener('open', () => {
+      didOpen = true
       this.#connectionAttempt = 0
       const heartbeatInterval = setInterval(() => {
         if (this.#ws.readyState != WebSocket.OPEN) return
@@ -138,6 +140,18 @@ export class PeerServerSignalingClient extends EventTarget {
         // if missing it will eventually just close the connection
       }, HEARTBEAT_INTERVAL)
       signal.onabort = () => clearInterval(heartbeatInterval)
+    }, {signal})
+
+    this.#ws.addEventListener('error', () => {
+      if (didOpen) return // only interested in errors before it has connected
+      // then the close event will not emit
+      wsListenerAbortController.abort()
+      this.dispatchEvent(new CustomEvent('error', {
+        detail: {message: 'WS error before connection.', code: 'SIGNALING_SERVER_WS_CONNECTION_ERROR'}
+      }))
+      if (this.#connectionAttempt < this.#maxConnectionAttempts) {
+        this.#queueRetry()
+      }
     }, {signal})
 
     this.#ws.addEventListener('close', () => {
