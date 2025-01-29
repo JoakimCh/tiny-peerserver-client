@@ -28,6 +28,7 @@ export class PeerServerSignalingClient extends EventTarget {
 
   get myId() {return this.#myId}
   get ready() {return this.#ready}
+  get maxConnectionAttempts() {return this.#maxConnectionAttempts}
 
   /** Returns a promise which resolves when ready or rejects at error or timeout. */
   createReadyPromise(timeout = this.#maxConnectionAttempts * this.#retryDelay) {
@@ -111,9 +112,10 @@ export class PeerServerSignalingClient extends EventTarget {
     })
     const endpointUrl = this.#endpoint+'?'+getParameters.toString()
     this.#connectionAttempt ++
-    this.dispatchEvent(new CustomEvent('connecting', {
-      detail: {message: ''+error, code: 'SIGNALING_SERVER_WS_CONNECTION_ERROR'}
-    }))
+    this.dispatchEvent(new CustomEvent('connecting', {detail: {
+      connectionAttempt: this.#connectionAttempt, 
+      lastAttempt: this.#connectionAttempt == this.#maxConnectionAttempts
+    }}))
     try {
       this.#ws = new WebSocket(endpointUrl)
     } catch (error) {
