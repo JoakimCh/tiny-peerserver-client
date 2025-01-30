@@ -149,11 +149,12 @@ export class PeerServerSignalingClient extends EventTarget {
     }, {signal})
 
     this.#ws.addEventListener('error', () => {
-      if (didOpen) return // only interested in errors before it has connected
-      wsListenerAbortController.abort()
+      this.#ready = false
       this.dispatchEvent(new CustomEvent('error', {
         detail: {message: 'WebSocket error.', code: 'SIGNALING_SERVER_CONNECTION_ERROR'}
       }))
+      if (didOpen) return
+      wsListenerAbortController.abort() // (no close event if it didn't open)
       if (this.#connectionAttempt < this.#maxConnectionAttempts) {
         this.#queueRetry()
       }
