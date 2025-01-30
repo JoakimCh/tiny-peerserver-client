@@ -313,11 +313,9 @@ class SignalingChannel {
       this.#queue.add(signal)
       return
     }
-    if (signal instanceof RTCSessionDescriptionInit) {
+    if (signal instanceof RTCSessionDescription || signal?.sdp) {
       this.#signalingServerClient.sendSignal({receiver: this.#receiver, description: signal})
-    } else if (signal instanceof RTCSessionDescription) {
-      this.#signalingServerClient.sendSignal({receiver: this.#receiver, description: signal})
-    } else if (signal instanceof RTCIceCandidate) {
+    } else if (signal instanceof RTCIceCandidate || signal?.candidate) {
       this.#signalingServerClient.sendSignal({receiver: this.#receiver, candidate: signal})
     } else {
       throw Error(`Can't send signal without description or candidate.`)
