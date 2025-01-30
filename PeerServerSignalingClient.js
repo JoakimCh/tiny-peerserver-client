@@ -292,12 +292,20 @@ class SignalingChannel {
   constructor(signalingServerClient, receiver) {
     this.#receiver = receiver
     this.#signalingServerClient = signalingServerClient
+    // whenever it is ready check the queue
+    if (signalingServerClient.ready) {
+      try {this.#handleQueue()} catch {}
+    }
     signalingServerClient.addEventListener('ready', () => {
-      for (const signal of this.#queue) {
-        this.send(signal)
-      }
-      this.#queue.clear()
+      this.#handleQueue()
     })
+  }
+
+  #handleQueue() {
+    for (const signal of this.#queue) {
+      this.send(signal)
+      this.#queue.delete(signal)
+    }
   }
 
   send(signal) {
