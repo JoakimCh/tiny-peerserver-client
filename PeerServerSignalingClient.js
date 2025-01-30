@@ -21,6 +21,12 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#myId = myId
     this.#getConnectionToken()
     setTimeout(this.#connect.bind(this), 0) // this allows events listeners to be setup before we dispatch the "connecting" event
+    window.addEventListener('beforeunload', () => {
+      // refreshing or closing a tab will gracefully close WebSocket connections
+      if (this.#ws.readyState == WebSocket.OPEN) {
+        sessionStorage.removeItem(this.#connectionToken) // signals a proper close
+      }
+    })
   }
 
   #getConnectionToken() {
