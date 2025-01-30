@@ -3,6 +3,7 @@ const HEARTBEAT_INTERVAL = 5000 // every 5 seconds
 
 export class PeerServerSignalingClient extends EventTarget {
   #endpoint; #ws; #myId
+  /** This token probably allows us to reconnect and keep our ID if the connection was non-gracefully broken. */
   #connectionToken
   #connectionAttempt = 0; #maxConnectionAttempts; #retryDelay; #retryTimer
   #ready
@@ -18,12 +19,17 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#maxConnectionAttempts = maxConnectionAttempts
     this.#retryDelay = retryDelay
     this.#myId = myId
-    this.#newConnectionToken()
+    this.#getConnectionToken()
     setTimeout(this.#connect.bind(this), 0) // this allows events listeners to be setup before we dispatch the "connecting" event
   }
 
-  #newConnectionToken() {
-    this.#connectionToken = Math.random().toString(36).slice(2)
+  #getConnectionToken() {
+    const storageKey = 'signalingToken-'+this.#myId
+    this.#connectionToken = sessionStorage.getItem(storageKey)
+    if (!this.#connectionToken) {
+      this.#connectionToken = Math.random().toString(36).slice(2)
+      sessionStorage.setItem(storageKey, this.#connectionToken)
+    }
   }
 
   get myId() {return this.#myId}
@@ -61,7 +67,7 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#connectionAttempt = 0
     if (newMyId && newMyId != this.#myId) { // ID change
       this.#myId = newMyId
-      this.#newConnectionToken()
+      this.#getConnectionToken()
       if (isOpenOrOpening) {
         this.close() // (ID change require reconnection)
       }
