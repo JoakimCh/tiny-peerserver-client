@@ -3,7 +3,7 @@ const HEARTBEAT_INTERVAL = 5000 // every 5 seconds
 
 export class PeerServerSignalingClient extends EventTarget {
   #endpoint; #ws; #myId
-  /** This token probably allows us to reconnect and keep our ID if the connection was non-gracefully broken. */
+  /** This token allows us to reconnect and keep our ID if the connection was non-gracefully closed (broken). */
   #connectionToken
   #connectionAttempt = 0; #maxConnectionAttempts; #retryDelay; #retryTimer
   #ready
@@ -146,6 +146,12 @@ export class PeerServerSignalingClient extends EventTarget {
         // if missing it will eventually just close the connection
       }, HEARTBEAT_INTERVAL)
       signal.onabort = () => clearInterval(heartbeatInterval)
+      // if we didn't have a clean close:
+      if (sessionStorage.getItem(this.#connectionToken) == 'open') {
+        // then we can continue the connection and it will not send us another "open" event
+        this.#ready = true
+        this.dispatchEvent(new CustomEvent('ready', {detail: {myId: this.#myId}}))
+      }
     }, {signal})
 
     this.#ws.addEventListener('error', () => {
@@ -160,8 +166,11 @@ export class PeerServerSignalingClient extends EventTarget {
       }
     }, {signal})
 
-    this.#ws.addEventListener('close', () => {
+    this.#ws.addEventListener('close', ({code, reason, wasClean}) => {
       wsListenerAbortController.abort()
+      if (wasClean) { // no longer bound to ID if gracefully closed
+        sessionStorage.removeItem(this.#connectionToken)
+      }
       const willRetry = this.#connectionAttempt < this.#maxConnectionAttempts
       if (this.#ready) { // only dispatch "closed" if it first had been "ready"
         this.#ready = false
@@ -225,6 +234,7 @@ export class PeerServerSignalingClient extends EventTarget {
       break
       case 'OPEN':
         this.#ready = true
+        sessionStorage.setItem(this.#connectionToken, 'open')
         this.dispatchEvent(new CustomEvent('ready', {detail: {myId: this.#myId}}))
       break
       case 'LEAVE':  // peerId has left
