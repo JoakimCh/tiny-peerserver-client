@@ -120,7 +120,7 @@ export class PeerServerSignalingClient extends EventTarget {
       this.#ws = new WebSocket(endpointUrl)
     } catch (error) {
       this.dispatchEvent(new CustomEvent('error', {
-        detail: {message: ''+error, code: 'SIGNALING_SERVER_WS_CONNECTION_ERROR'}
+        detail: {message: ''+error, code: 'SIGNALING_SERVER_CONNECTION_ERROR'}
       }))
       if (this.#connectionAttempt < this.#maxConnectionAttempts) {
         this.#queueRetry()
@@ -144,10 +144,9 @@ export class PeerServerSignalingClient extends EventTarget {
 
     this.#ws.addEventListener('error', () => {
       if (didOpen) return // only interested in errors before it has connected
-      // then the close event will not emit
       wsListenerAbortController.abort()
       this.dispatchEvent(new CustomEvent('error', {
-        detail: {message: 'WS error before connection.', code: 'SIGNALING_SERVER_WS_CONNECTION_ERROR'}
+        detail: {message: 'WebSocket error.', code: 'SIGNALING_SERVER_CONNECTION_ERROR'}
       }))
       if (this.#connectionAttempt < this.#maxConnectionAttempts) {
         this.#queueRetry()
@@ -224,7 +223,7 @@ export class PeerServerSignalingClient extends EventTarget {
       case 'LEAVE':  // peerId has left
       case 'EXPIRE': // a signal to peerId could not be delivered
         this.dispatchEvent(new CustomEvent('expire', {detail: {peerId: msg.src}}))
-        this.#channels.get(peerId)?.onExpire?.()
+        this.#channels.get(msg.src)?.onExpire?.()
       break
       case 'OFFER': case 'ANSWER': case 'CANDIDATE': {
         const {type, src: sender, dst, payload: {
