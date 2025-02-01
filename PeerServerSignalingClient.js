@@ -285,6 +285,7 @@ class SignalingChannel {
 
   /** The onSignal({description, candidate}) callback */
   onSignal
+  /** The onExpire(peerId) callback */
   onExpire
   get myId() {return this.#signalingServerClient.myId}
   get peerId() {return this.#receiver}
@@ -303,22 +304,30 @@ class SignalingChannel {
 
   #handleQueue() {
     for (const signal of this.#queue) {
-      this.send(signal)
       this.#queue.delete(signal)
+      this.send(signal, true)
+      // (if send throws then the signal is queued again and this loop is aborted)
     }
   }
 
-  send(signal) {
-    if (!this.#signalingServerClient.ready) {
-      this.#queue.add(signal)
-      return
-    }
+  /** Send a signal, if offline it queues it and sends it when client is 'ready'. */
+  send(signal, throwIfOffline = false) {
+    let packet
     if (signal instanceof RTCSessionDescription || signal?.sdp) {
-      this.#signalingServerClient.sendSignal({receiver: this.#receiver, description: signal})
+      packet = {receiver: this.#receiver, description: signal}
     } else if (signal instanceof RTCIceCandidate || signal?.candidate) {
-      this.#signalingServerClient.sendSignal({receiver: this.#receiver, candidate: signal})
+      packet = {receiver: this.#receiver, candidate: signal}
     } else {
       throw Error(`Can't send signal without description or candidate.`)
+    }
+    try {
+      this.#signalingServerClient.sendSignal(packet)
+    } catch (error) {
+      this.#queue.add(signal)
+      this.#signalingServerClient.reconnect()
+      if (throwIfOffline) {
+        throw error
+      }
     }
   }
 }
