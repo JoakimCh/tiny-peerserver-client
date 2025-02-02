@@ -280,7 +280,7 @@ export class PeerServerSignalingClient extends EventTarget {
         description: false,
         // ufrag: '',
         candidates: new Set(),
-        forwardTimer
+        forwardTimer: undefined
       }
       this.#senderSignalCache.set(sender, cache)
     }
