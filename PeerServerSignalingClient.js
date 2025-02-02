@@ -90,7 +90,7 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#ws?.close()
   }
 
-  sendSignal({receiver, description: sdp, candidate, metadata} = {}) {
+  sendSignal({receiver, description: sdp, candidate} = {}) {
     if (!receiver) throw Error('Signal must have a receiver.')
     const type = (candidate ? 'CANDIDATE' : sdp?.type.toUpperCase())
     if (!type) throw Error('Signal must contain a description or candidate.')
@@ -99,14 +99,13 @@ export class PeerServerSignalingClient extends EventTarget {
     }
     this.#ws.send(JSON.stringify({
       type, dst: receiver,
-      payload: {sdp, candidate, metadata}
+      payload: {sdp, candidate}
       // (JSON will NOT store undefined fields)
     }))
     if (globalThis['DEBUG_SIGNALING']) {
       const detail = {sender: this.myId}
       if (sdp) detail.description = sdp
       if (candidate) detail.candidate = candidate
-      if (metadata) detail.metadata = metadata
       console.debug(type, detail)
     }
   }
@@ -212,11 +211,10 @@ export class PeerServerSignalingClient extends EventTarget {
   #messageHandler(msg) {
     if (globalThis['DEBUG_SIGNALING']) {
       const {type, src: sender, payload: {
-        sdp: description, candidate, metadata} = {}} = msg
+        sdp: description, candidate} = {}} = msg
       const detail = {sender}
       if (description) detail.description = description
       if (candidate) detail.candidate = candidate
-      if (metadata) detail.metadata = metadata
       console.debug(type, detail)
     }
     switch (msg.type) {
@@ -250,31 +248,74 @@ export class PeerServerSignalingClient extends EventTarget {
       break
       case 'OFFER': case 'ANSWER': case 'CANDIDATE': {
         const {type, src: sender, dst, payload: {
-          sdp: description, candidate, metadata} = {}} = msg
+          sdp: description, candidate} = {}} = msg
         if (dst != this.#myId) throw Error('LOL, OMG!')
-        const detail = {sender}
-        if (metadata) detail.metadata = metadata
-        if (candidate) detail.candidate = candidate
-        if (description) detail.description = description
-        const detailJson = JSON.stringify(detail)
-        if (!this.#incomingSignals.has(detailJson)) {
-          this.#incomingSignals.add(detailJson)
-          this.dispatchEvent(new CustomEvent('signal', {detail}))
-          this.#channels.get(sender)?.onSignal?.({description, candidate})
-        } else {
-          console.warn('blocked duplicate signal')
-          clearTimeout(this.#clearCacheTimer)
-          this.#clearCacheTimer = setTimeout(() => {
-            this.#incomingSignals.clear()
-          }, 2000)
-        }
+        const detail = {sender, description, candidate}
+        // if (candidate) detail.candidate = candidate
+        // if (description) detail.description = description
+        this.#writeCache(detail)
+        // const detailJson = JSON.stringify(detail)
+        // if (!this.#incomingSignals.has(detailJson)) {
+        //   this.#incomingSignals.add(detailJson)
+        //   this.dispatchEvent(new CustomEvent('signal', {detail}))
+        //   this.#channels.get(sender)?.onSignal?.({description, candidate})
+        // } else {
+        //   console.warn('blocked duplicate signal')
+        //   clearTimeout(this.#clearCacheTimer)
+        //   this.#clearCacheTimer = setTimeout(() => {
+        //     this.#incomingSignals.clear()
+        //   }, 2000)
+        // }
       } break
     }
   }
 
-  /** To stop duplicate signals from being delivered. */
-  #incomingSignals = new Set()
-  #clearCacheTimer
+  // #forwardTimer
+  #senderSignalCache = new Map()
+  #writeCache(detail) {
+    const {sender, description, candidate} = detail
+    let cache = this.#senderSignalCache.get(sender)
+    if (!cache) {
+      cache = {
+        description: false,
+        // ufrag: '',
+        candidates: new Set(),
+        forwardTimer
+      }
+      this.#senderSignalCache.set(sender, cache)
+    }
+    if (description) {
+      cache.description = description // only last is valid
+      cache.candidates.clear()
+      // cache.ufrag = extractIceUfrag(description.sdp)
+    }
+    if (candidate) {
+      cache.candidates.add(JSON.stringify(candidate))
+      // if (candidate.usernameFragment == cache.ufrag) {
+      //   cache.candidates.add(candidate)
+      // }
+    }
+
+    clearTimeout(cache.forwardTimer)
+    cache.forwardTimer = setTimeout(() => {
+      const {description, candidates} = cache
+      if (description) {
+        cache.description = false // wait for new one before sending anything
+        this.dispatchEvent(new CustomEvent('signal', {detail: {sender, description}}))
+        this.#channels.get(sender)?.onSignal?.({description})
+        // candidates.filter(item => item.ufrag == ufrag)
+        for (let candidate of candidates) {
+          candidate = JSON.parse(candidate)
+          this.dispatchEvent(new CustomEvent('signal', {detail: {sender, candidate}}))
+          this.#channels.get(sender)?.onSignal?.({candidate})
+        }
+      }
+    }, 200)
+  }
+
+  // /** To stop duplicate signals from being delivered. */
+  // #incomingSignals = new Set()
+  // #clearCacheTimer
   
   #channels = new Map()
   getChannel(peerId) {
@@ -288,6 +329,12 @@ export class PeerServerSignalingClient extends EventTarget {
   removeChannel(peerId) {
     this.#channels.delete(peerId)
   }
+}
+
+const ufragRegExp = new RegExp(/a=ice-ufrag:(\S+)/)
+function extractIceUfrag(sdp) {
+  const match = sdp.match(ufragRegExp)
+  return match ? match[1] : null
 }
 
 // for RTCPerfectNegotiator compatibility it needs the onSignal, onExpire, myId, peerId and send({description, candidate}) interface
