@@ -256,11 +256,25 @@ export class PeerServerSignalingClient extends EventTarget {
         if (metadata) detail.metadata = metadata
         if (candidate) detail.candidate = candidate
         if (description) detail.description = description
-        this.dispatchEvent(new CustomEvent('signal', {detail}))
-        this.#channels.get(sender)?.onSignal?.({description, candidate})
+        const detailJson = JSON.stringify(detail)
+        if (!this.#incomingSignals.has(detailJson)) {
+          this.#incomingSignals.add(detailJson)
+          this.dispatchEvent(new CustomEvent('signal', {detail}))
+          this.#channels.get(sender)?.onSignal?.({description, candidate})
+        } else {
+          console.warn('blocked duplicate signal')
+          clearTimeout(this.#clearCacheTimer)
+          this.#clearCacheTimer = setTimeout(() => {
+            this.#incomingSignals.clear()
+          }, 2000)
+        }
       } break
     }
   }
+
+  /** To stop duplicate signals from being delivered. */
+  #incomingSignals = new Set()
+  #clearCacheTimer
   
   #channels = new Map()
   getChannel(peerId) {
