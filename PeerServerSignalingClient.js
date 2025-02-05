@@ -80,11 +80,15 @@ export class PeerServerSignalingClient extends EventTarget {
     } else if (isOpenOrOpening) { // nothing to do then
       return
     }
-    if (retryTimer) return // then it will run #connect()
+    if (this.#retryTimer) return // then it will run #connect()
     this.#connect()
   }
 
   close() {
+    if (this.#connectWhenOnline) {
+      window.removeEventListener('online', this.#connectWhenOnline)
+      this.#connectWhenOnline = false
+    }
     this.#connectionAttempt = this.#maxConnectionAttempts
     this.#ready = false
     this.#ws?.close()
@@ -115,7 +119,19 @@ export class PeerServerSignalingClient extends EventTarget {
     this.#retryTimer = setTimeout(this.#connect.bind(this), this.#retryDelay)
   }
 
+  #connectWhenOnline
+
   #connect() {
+    if (!navigator.onLine) {
+      if (!this.#connectWhenOnline) {
+        this.#connectWhenOnline = () => {
+          this.#connectWhenOnline = false
+          this.#connect()
+        }
+        window.addEventListener('online', this.#connectWhenOnline, {once: true})
+      }
+      return // no offline connection attempt
+    }
     this.#retryTimer = false
     this.#ready = false
     const getParameters = new URLSearchParams({
