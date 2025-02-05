@@ -80,7 +80,7 @@ export class PeerServerSignalingClient extends EventTarget {
     } else if (isOpenOrOpening) { // nothing to do then
       return
     }
-    clearTimeout(this.#retryTimer) // abort any queued retry
+    if (retryTimer) return // then it will run #connect()
     this.#connect()
   }
 
@@ -111,10 +111,12 @@ export class PeerServerSignalingClient extends EventTarget {
   }
 
   #queueRetry() {
+    if (this.#retryTimer) return // already queued
     this.#retryTimer = setTimeout(this.#connect.bind(this), this.#retryDelay)
   }
 
   #connect() {
+    this.#retryTimer = false
     this.#ready = false
     const getParameters = new URLSearchParams({
       key: 'peerjs', // API key for the PeerServer
