@@ -251,21 +251,9 @@ export class PeerServerSignalingClient extends EventTarget {
           sdp: description, candidate} = {}} = msg
         if (dst != this.#myId) throw Error('LOL, OMG!')
         const detail = {sender, description, candidate}
-        // if (candidate) detail.candidate = candidate
-        // if (description) detail.description = description
-        this.#writeCache(detail)
-        // const detailJson = JSON.stringify(detail)
-        // if (!this.#incomingSignals.has(detailJson)) {
-        //   this.#incomingSignals.add(detailJson)
-        //   this.dispatchEvent(new CustomEvent('signal', {detail}))
-        //   this.#channels.get(sender)?.onSignal?.({description, candidate})
-        // } else {
-        //   console.warn('blocked duplicate signal')
-        //   clearTimeout(this.#clearCacheTimer)
-        //   this.#clearCacheTimer = setTimeout(() => {
-        //     this.#incomingSignals.clear()
-        //   }, 2000)
-        // }
+        // this.#writeCache(detail)
+        this.dispatchEvent(new CustomEvent('signal', {detail}))
+        this.#channels.get(sender)?.onSignal?.(detail)
       } break
     }
   }
@@ -342,7 +330,7 @@ class SignalingChannel {
   #receiver
   /** @type {PeerServerSignalingClient} */
   #signalingServerClient
-  #queue = new Set() // (a Set avoids duplicate signals)
+  #queued = {description: false, candidates: new Set()}
 
   /** The onSignal({description, candidate}) callback */
   onSignal
@@ -364,10 +352,13 @@ class SignalingChannel {
   }
 
   #handleQueue() {
-    for (const signal of this.#queue) {
-      this.#queue.delete(signal)
-      this.send(signal, true)
-      // (if send throws then the signal is queued again and this loop is aborted)
+    if (this.#queued.description) {
+      this.send(this.#queued.description, true)
+      this.#queued.description = false
+    }
+    for (const candidate of this.#queued.candidates) {
+      this.#queued.candidates.delete(candidate)
+      this.send(candidate, true)
     }
   }
 
@@ -384,7 +375,12 @@ class SignalingChannel {
     try {
       this.#signalingServerClient.sendSignal(packet)
     } catch (error) {
-      this.#queue.add(signal)
+      if (packet.description) {
+        this.#queued.description = packet.description // keep the latest SDP
+        this.#queued.candidates.clear() // (updated candidates always follow a SDP)
+      } else {
+        this.#queued.candidates.add(packet.candidate)
+      }
       this.#signalingServerClient.reconnect()
       if (throwIfOffline) {
         throw error
