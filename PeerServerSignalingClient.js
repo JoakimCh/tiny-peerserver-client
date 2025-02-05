@@ -269,60 +269,12 @@ export class PeerServerSignalingClient extends EventTarget {
           sdp: description, candidate} = {}} = msg
         if (dst != this.#myId) throw Error('LOL, OMG!')
         const detail = {sender, description, candidate}
-        // this.#writeCache(detail)
         this.dispatchEvent(new CustomEvent('signal', {detail}))
         this.#channels.get(sender)?.onSignal?.(detail)
       } break
     }
   }
 
-  // #forwardTimer
-  #senderSignalCache = new Map()
-  #writeCache(detail) {
-    const {sender, description, candidate} = detail
-    let cache = this.#senderSignalCache.get(sender)
-    if (!cache) {
-      cache = {
-        description: false,
-        // ufrag: '',
-        candidates: new Set(),
-        forwardTimer: undefined
-      }
-      this.#senderSignalCache.set(sender, cache)
-    }
-    if (description) {
-      cache.description = description // only last is valid
-      cache.candidates.clear()
-      // cache.ufrag = extractIceUfrag(description.sdp)
-    }
-    if (candidate) {
-      cache.candidates.add(JSON.stringify(candidate))
-      // if (candidate.usernameFragment == cache.ufrag) {
-      //   cache.candidates.add(candidate)
-      // }
-    }
-
-    clearTimeout(cache.forwardTimer)
-    cache.forwardTimer = setTimeout(() => {
-      const {description, candidates} = cache
-      if (description) {
-        cache.description = false // wait for new one before sending anything
-        this.dispatchEvent(new CustomEvent('signal', {detail: {sender, description}}))
-        this.#channels.get(sender)?.onSignal?.({description})
-        // candidates.filter(item => item.ufrag == ufrag)
-        for (let candidate of candidates) {
-          candidate = JSON.parse(candidate)
-          this.dispatchEvent(new CustomEvent('signal', {detail: {sender, candidate}}))
-          this.#channels.get(sender)?.onSignal?.({candidate})
-        }
-      }
-    }, 200)
-  }
-
-  // /** To stop duplicate signals from being delivered. */
-  // #incomingSignals = new Set()
-  // #clearCacheTimer
-  
   #channels = new Map()
   getChannel(peerId) {
     let channel = this.#channels.get(peerId)
@@ -335,12 +287,6 @@ export class PeerServerSignalingClient extends EventTarget {
   removeChannel(peerId) {
     this.#channels.delete(peerId)
   }
-}
-
-const ufragRegExp = new RegExp(/a=ice-ufrag:(\S+)/)
-function extractIceUfrag(sdp) {
-  const match = sdp.match(ufragRegExp)
-  return match ? match[1] : null
 }
 
 // for RTCPerfectNegotiator compatibility it needs the onSignal, onExpire, myId, peerId and send({description, candidate}) interface
