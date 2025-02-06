@@ -352,3 +352,26 @@ class SignalingChannel {
     }
   }
 }
+
+/** Given `myId` and a `signalingClient` it will ensure it is connected with the correct ID or throw an error while awaiting its promise. If no `signalingClient` given it will return a new one using the optional `config` given. 
+@example
+// first time it creates it, second time it ensures that it is ready with the current ID
+try {
+  signalingClient = ensureClientReady({myId, signalingClient})
+} catch (error) {
+  console.debug(error) // e.g. timeout
+}
+*/
+export async function ensureClientReady({myId, signalingClient = undefined, config = {}}) {
+  if (signalingClient) {
+    if (!(signalingClient.ready && signalingClient.myId == myId)) {
+      signalingClient.reconnect(myId)
+    }
+  } else {
+    signalingClient = new PeerServerSignalingClient({...config, myId})
+  }
+  if (!signalingClient.ready) {
+    await signalingClient.createReadyPromise()
+  }
+  return signalingClient
+}
