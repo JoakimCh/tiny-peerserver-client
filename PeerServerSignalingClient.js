@@ -1,6 +1,27 @@
 
 const HEARTBEAT_INTERVAL = 5000 // every 5 seconds
 
+export const peerjsIceConfig = {
+  iceServers: [
+    {
+      urls: [
+        'stun:stun.l.google.com:19302',
+        'stun:stun1.l.google.com:19302',
+        'stun:stun2.l.google.com:19302',
+        'stun:stun3.l.google.com:19302',
+        'stun:stun4.l.google.com:19302',
+      ]
+    }, { // from the PeerJS project: https://github.com/peers/peerjs/blob/master/lib/util.ts
+      username: 'peerjs',
+      credential: 'peerjsp',
+      urls: [
+        'turn:eu-0.turn.peerjs.com:3478',
+        'turn:us-0.turn.peerjs.com:3478',
+      ]
+    }
+  ]
+}
+
 export class PeerServerSignalingClient extends EventTarget {
   #endpoint; #ws; #myId
   /** This token allows us to reconnect and keep our ID if the connection was non-gracefully closed (broken). */
