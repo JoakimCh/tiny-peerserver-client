@@ -23,6 +23,7 @@ export const peerjsIceConfig = {
 }
 
 export class PeerServerSignalingClient extends EventTarget {
+  static debug
   #endpoint; #ws; #myId
   /** This token allows us to reconnect and keep our ID if the connection was non-gracefully closed (broken). */
   #connectionToken
@@ -127,11 +128,11 @@ export class PeerServerSignalingClient extends EventTarget {
       payload: {sdp, candidate}
       // (JSON will NOT store undefined fields)
     }))
-    if (globalThis['DEBUG_SIGNALING']) {
+    if (PeerServerSignalingClient.debug) {
       const detail = {sender: this.myId}
       if (sdp) detail.description = sdp
       if (candidate) detail.candidate = candidate
-      console.debug(type, detail)
+      PeerServerSignalingClient.debug(type, detail)
     }
   }
 
@@ -248,13 +249,13 @@ export class PeerServerSignalingClient extends EventTarget {
   }
 
   #messageHandler(msg) {
-    if (globalThis['DEBUG_SIGNALING']) {
+    if (PeerServerSignalingClient.debug) {
       const {type, src: sender, payload: {
         sdp: description, candidate} = {}} = msg
       const detail = {sender}
       if (description) detail.description = description
       if (candidate) detail.candidate = candidate
-      console.debug(type, detail)
+      PeerServerSignalingClient.debug(type, detail)
     }
     switch (msg.type) {
       default:
